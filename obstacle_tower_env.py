@@ -3,9 +3,10 @@ from PIL import Image
 import itertools
 import gym
 import numpy as np
-from mlagents_envs import UnityEnvironment
+from mlagents.envs import UnityEnvironment
 from gym import error, spaces
 import os
+import random
 
 
 class UnityGymException(error.Error):
@@ -41,8 +42,7 @@ class ObstacleTowerEnv(gym.Env):
 
         self._env = UnityEnvironment(environment_filename,
                                      worker_id,
-                                     docker_training=docker_training,
-                                     timeout_wait=timeout_wait)
+                                     docker_training=docker_training)
 
         split_name = self._env.academy_name.split('-v')
         if len(split_name) == 2 and split_name[0] == "ObstacleTower":
@@ -104,12 +104,15 @@ class ObstacleTowerEnv(gym.Env):
 
         # Set observation and action spaces
         if len(brain.vector_action_space_size) == 1:
+            print("Discrete")
             self._action_space = spaces.Discrete(brain.vector_action_space_size[0])
         else:
             if flatten_branched:
+                print("Flattened branched")
                 self._flattener = ActionFlattener(brain.vector_action_space_size)
                 self._action_space = self._flattener.action_space
             else:
+                print("Multidiscrete")
                 self._action_space = spaces.MultiDiscrete(brain.vector_action_space_size)
 
         high = np.array([np.inf] * brain.vector_observation_space_size)
@@ -175,6 +178,13 @@ class ObstacleTowerEnv(gym.Env):
         self.game_over = False
 
         obs, reward, done, info = self._single_step(info)
+
+        info['total_keys']
+        info['time_remaining']
+        info['current_floor']
+        
+
+
         return obs
 
     def step(self, action):
@@ -212,7 +222,7 @@ class ObstacleTowerEnv(gym.Env):
         return obs, reward, done, info
 
     def _single_step(self, info):
-        self.visual_obs = self._preprocess_single(info.visual_observations[0][0, :, :, :])
+        self.visual_obs = self._preprocess_single(info.visual_observations[0][0])
 
         self.visual_obs, keys, time, current_floor = self._prepare_tuple_observation(
             self.visual_obs, info.vector_observations[0])
@@ -242,6 +252,10 @@ class ObstacleTowerEnv(gym.Env):
 
     def _preprocess_single(self, single_visual_obs):
         if self.uint8_visual:
+
+            #ignore time bar to decrease variance row 7 - 10
+            for i in range(4):
+                single_visual_obs[i+6] = single_visual_obs[i+6]*0
             return (255.0 * single_visual_obs).astype(np.uint8)
         else:
             return single_visual_obs
@@ -294,7 +308,7 @@ class ObstacleTowerEnv(gym.Env):
                 "Starting floor outside of valid range [0, 99). Floor 0 will be used"
                 "on next reset."
             )
-        logger.warning("New starting floor " + str(floor) + " will apply on next reset.")
+        #logger.warning("New starting floor " + str(floor) + " will apply on next reset.")
         self._floor = floor
 
     @staticmethod
@@ -383,9 +397,12 @@ class ActionFlattener():
         :param branched_action_space: A List containing the sizes of each branch of the action
         space, e.g. [2,3,3] for three branches with size 2, 3, and 3 respectively.
         """
+
+        self.action_set = [0,3,6,12,18, 19, 20, 21, 24, 30]
+        self.action_map = [0,-1,-1,1,-1,-1,2,-1,-1,-1,-1,-1,3,-1,-1,-1,-1,-1,4,5,6,7,-1,-1,8,-1,-1,-1,-1,-1,9]
         self._action_shape = branched_action_space
         self.action_lookup = self._create_lookup(self._action_shape)
-        self.action_space = spaces.Discrete(len(self.action_lookup))
+        self.action_space = spaces.Discrete(len(self.action_set))
 
     @classmethod
     def _create_lookup(self, branched_action_space):
@@ -406,4 +423,26 @@ class ActionFlattener():
         :param: action: A scalar value representing one of the discrete actions.
         :return: The List containing the branched actions.
         """
-        return self.action_lookup[action]
+        action = self.action_set[action]
+
+        if action == 0:
+            return [0,0,0,0]
+        elif action == 3:
+            return [0, 0, 1, 0]
+        elif action == 6:
+            return [0, 1, 0, 0]
+        elif action == 12:
+            return [0, 2, 0, 0]
+        elif action == 18:
+            return [1, 0, 0, 0]
+        elif action == 19:
+            return [1, 0, 0, 1]
+        elif action == 20:
+            return [1, 0, 0, 2]
+        elif action == 21:
+            return [1, 0, 1, 0]
+        elif action == 24:
+            return [1, 1, 0, 0]
+        elif action == 30:
+            return [1, 2, 0, 0]
+
